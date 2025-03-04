@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Platform Preloader</title>
+    <script src="https://unpkg.com/@rive-app/canvas@latest"></script>
+    <!-- 
+    ===========================================================================
+    RIVE ANIMATION IMPLEMENTATION NOTES
+    ===========================================================================
+    
+    KEY INSIGHTS:
+    
+    1. LIBRARY VERSION:
+       - Always use the latest version of the Rive library for best compatibility
+       - <script src="https://unpkg.com/@rive-app/canvas@latest"></script>
+       - If you encounter clipping or rendering issues, try updating to the latest version
+    
+    2. EVENT HANDLING:
+       - ALWAYS listen for the generic "riveevent" event (not specific named events)
+       - Check event.data.name to identify specific events: event.data.name === "Refresh"
+       - Event listeners should be placed OUTSIDE the onLoad callback
+       - Example: 
+         riveInstance.on("riveevent", (event) => {
+           if (event.data && event.data.name === "Refresh") {
+             // Handle event
+           }
+         });
+    
+    3. TRIGGERING INPUTS:
+       - Use stateMachineInputs to access triggers and other inputs
+       - Find and fire triggers properly:
+         const inputs = riveInstance.stateMachineInputs('State Machine 1');
+         const trigger = inputs.find(input => input.name === "TriggerName");
+         if (trigger) trigger.fire();
+    
+    4. TEXT MANIPULATION:
+       - Use setTextRunValue() to set text in Rive animations:
+         riveInstance.setTextRunValue("TextFieldName", "New Text");
+       - Alternative approach if textRuns available:
+         const textRuns = riveInstance.textRuns;
+         const textRun = textRuns.find(run => run.name === "TextFieldName");
+         if (textRun) textRun.text = "New Text";
+    
+    5. TIMER MANAGEMENT:
+       - Store timer references to properly clear/reset them
+       - When events like "Refresh" occur, clear and reset intervals:
+         clearInterval(myInterval);
+         myInterval = setInterval(myFunction, interval);
+    
+    6. DEBUG TIPS:
+       - Always add debug logging for events and actions
+       - Log available inputs when Rive loads to see what's available
+       - Create a visual event log for easier troubleshooting
+       - Add manual trigger buttons for testing
+    
+    COMMON ISSUES:
+    - Animation clipping: Try latest library version or adjust canvas size
+    - Events not detected: Make sure to listen for "riveevent" not specific events
+    - Text not updating: Try both setTextRunValue and textRuns approaches
+    - Animation freezing: Ensure error handling doesn't stop animation loop
+    -->
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f5f5f5;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #canvas {
+            width: 1920px;
+            height: 1080px;
+            max-width: 100%;
+            max-height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <canvas id="canvas" width="1920" height="1080"></canvas>
+    </div>
+    
+    <script>
+        let riveInstance = null;
+        
+        // Define the quotes and speakers
+        const quoteSets = [
+            { speaker: "Albert Einstein", quote: "Imagination is more important than knowledge." },
+            { speaker: "Maya Angelou", quote: "I've learned that people will forget what you said, people will forget what you did, but people will never forget how you made them feel." },
+            { speaker: "Steve Jobs", quote: "Your time is limited, so don't waste it living someone else's life." },
+            { speaker: "Marie Curie", quote: "Nothing in life is to be feared, it is only to be understood." },
+            { speaker: "Nelson Mandela", quote: "It always seems impossible until it's done." },
+            { speaker: "Jane Austen", quote: "The person, be it gentleman or lady, who has not pleasure in a good novel, must be intolerably stupid." },
+            { speaker: "Nikola Tesla", quote: "The present is theirs; the future, for which I really worked, is mine." },
+            { speaker: "Eleanor Roosevelt", quote: "The future belongs to those who believe in the beauty of their dreams." }
+        ];
+        
+        let currentQuoteIndex = 0;
+        
+        // Update the quote
+        function updateQuote() {
+            if (riveInstance) {
+                try {
+                    const currentSet = quoteSets[currentQuoteIndex];
+                    
+                    // Try to set text run values
+                    try {
+                        riveInstance.setTextRunValue("Speaker", currentSet.speaker);
+                        riveInstance.setTextRunValue("Quote", currentSet.quote);
+                    } catch (textErr) {
+                        console.warn("Text run update via setTextRunValue failed:", textErr);
+                        
+                        // Try alternative method with textRuns property
+                        try {
+                            const textRuns = riveInstance.textRuns;
+                            if (textRuns) {
+                                const speakerRun = textRuns.find(run => run.name === "Speaker");
+                                const quoteRun = textRuns.find(run => run.name === "Quote");
+                                
+                                if (speakerRun) speakerRun.text = currentSet.speaker;
+                                if (quoteRun) quoteRun.text = currentSet.quote;
+                            }
+                        } catch (err) {
+                            console.warn("Alternative text update method failed:", err);
+                        }
+                    }
+                    
+                    // Move to the next quote set
+                    currentQuoteIndex = (currentQuoteIndex + 1) % quoteSets.length;
+                } catch (err) {
+                    console.error("Error in updateQuote:", err);
+                }
+            }
+        }
+        
+        // Initialize Rive
+        const init = async () => {
+            try {
+                // Track our timers so we can reset them
+                let subsequentQuotesInterval;
+                let firstQuoteTimeout;
+                
+                riveInstance = new rive.Rive({
+                    src: 'platform_preloader_14.riv',
+                    canvas: document.getElementById('canvas'),
+                    autoplay: true,
+                    stateMachines: 'State Machine 1',
+                    fit: 'contain',
+                    alignment: 'center',
+                    onLoad: () => {
+                        console.log('Rive file loaded successfully');
+                        
+                        // Resize to maintain quality
+                        window.addEventListener('resize', () => {
+                            riveInstance.resizeDrawingSurfaceToCanvas();
+                        });
+                        
+                        // Set the initial quote immediately when loaded
+                        updateQuote();
+                        
+                        // First change happens exactly 10 seconds after start
+                        firstQuoteTimeout = setTimeout(() => {
+                            updateQuote();
+                            
+                            // Setup 5-second interval for all subsequent updates
+                            subsequentQuotesInterval = setInterval(updateQuote, 5000);
+                        }, 10000);
+                    }
+                });
+                
+                // Add event listeners for Rive events
+                riveInstance.on("riveevent", (event) => {
+                    console.log("Rive event received:", event);
+                    
+                    // The event data is an object with a name property
+                    if (event.data && event.data.name === "Refresh") {
+                        console.log('Refresh event detected - Timer reset');
+                        
+                        // Clear existing interval timer
+                        if (subsequentQuotesInterval) {
+                            clearInterval(subsequentQuotesInterval);
+                        }
+                        
+                        // Reset the 5-second timer
+                        subsequentQuotesInterval = setInterval(updateQuote, 5000);
+                    }
+                });
+                
+            } catch (err) {
+                console.error('Error loading Rive file:', err);
+            }
+        };
+        
+        // Start initialization as soon as page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
